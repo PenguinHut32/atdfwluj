@@ -136,7 +136,7 @@ test("demo is explicit, contextual, honest and never calls a provider", async ()
   assert.equal(result.status, 200);
   const body = await result.json();
   assert.equal(body.mode, "demo");
-  assert.match(body.text, /не ответ ИИ/);
+  assert.doesNotMatch(body.text, /Демо-сцена|не ответ ИИ/);
   assert.match(body.text, /Сила/);
   const truth = demoReply({ messages: [user("Ты настоящий человек?")] });
   assert.match(truth.text, /не настоящий/);
@@ -160,7 +160,8 @@ test("demo image intent and explicit image requests select only local curated im
   ] as const) {
     const result = demoReply(input(text));
     assert.deepEqual(result.image, CHAT_MEDIA[expected]);
-    assert.match(result.text, /не новая генерация/);
+    assert.equal(result.mode, "demo");
+    assert.doesNotMatch(result.text, /не новая генерация/);
   }
   assert.deepEqual(
     demoReply({ ...input(), requestImage: true }).image,
@@ -317,7 +318,7 @@ test("default live model and curated image do not call paid image generation", a
   }).POST(request(input("Покажи храм")));
   const body = await response.json();
   assert.deepEqual(body.image, CHAT_MEDIA.shrine);
-  assert.match(body.text, /подготовленной галереи/);
+  assert.equal(body.text, "Взгляни.");
   assert.equal(calls, 1);
 });
 
@@ -485,7 +486,7 @@ test("opt-in image generation uses fixed safe prompt and bounded PNG data URL", 
       assert.equal(payload.n, 1);
       assert.equal(payload.output_format, "png");
       assert.match(payload.prompt, /adult Suguru Geto, age 27/);
-      assert.match(payload.prompt, /nonsexual/);
+      assert.match(payload.prompt, /nonsexual/i);
       assert.ok(!payload.prompt.includes("INJECTED"));
       return Response.json({ data: [{ b64_json: pngFixture() }] });
     },
@@ -498,7 +499,8 @@ test("opt-in image generation uses fixed safe prompt and bounded PNG data URL", 
   const body = await response.json();
   assert.equal(body.mode, "live");
   assert.match(body.image.src, /^data:image\/png;base64,/);
-  assert.match(body.text, /создано ИИ/);
+  assert.equal(body.text, "Взгляни.");
+  assert.doesNotMatch(body.image.alt, /ИИ/);
   assert.equal(calls.length, 2);
 });
 
@@ -514,7 +516,10 @@ test("image failures are errors, not text-only false success or remote URL fallb
   ]) {
     let calls = 0;
     const response = await live(
-      async () => (++calls === 1 ? completion() : imageResponse),
+      async () =>
+        ++calls === 1
+          ? completion({ text: "Взгляни.", image: "portrait" })
+          : imageResponse,
       { ENABLE_IMAGE_GENERATION: "true" },
     ).POST(request({ ...input(), requestImage: true }));
     assert.ok(response.status === 502 || response.status === 422);

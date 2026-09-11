@@ -711,7 +711,7 @@
 }
 .scroll-bottom {
   position: absolute;
-  bottom: 125px;
+  bottom: calc(100% + 10px);
   right: 26px;
   z-index: 5;
   background: #1c1423;
@@ -859,6 +859,88 @@
 }
 .sidebar-backdrop {
   display: none;
+}
+.conversation-styles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 850px;
+  margin: 0 auto 9px;
+}
+.conversation-styles > button {
+  min-height: 32px;
+  padding: 6px 11px;
+  border: 1px solid #7a728544;
+  border-radius: 20px;
+  font-size: 11px;
+  color: #bcb2c5;
+  background: #141018;
+}
+.conversation-styles > button[aria-pressed="true"] {
+  color: #e2cf9b;
+  border-color: #b89b3e99;
+  background: #b89b3e16;
+}
+.conversation-styles > button:disabled,
+.suggested-prompts > button:disabled,
+.chat-popover > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.about-chat-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px;
+  color: #bcb2c5;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.conversation-styles > button:focus-visible,
+.about-chat-button:focus-visible,
+.about-dialog a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.media-popover {
+  width: min(280px, calc(100vw - 40px));
+  max-height: min(560px, 55dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.media-unavailable {
+  padding: 8px 10px;
+  color: #bcb2c5;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.message-bubble em {
+  color: #c1b5ca;
+}
+.about-dialog {
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+.about-dialog .about-mode {
+  padding: 12px;
+  border: 1px solid #b89b3e44;
+  border-radius: 6px;
+  color: #e2cf9b;
+}
+.about-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.about-actions > a {
+  font-size: 12px;
+  color: #bcb2c5;
+  text-decoration: underline;
+}
+.image-origin {
+  color: #c4ad76;
 }
 @keyframes typing-dot {
   0%,
@@ -1104,7 +1186,7 @@
     padding: 10px;
   }
   .scroll-bottom {
-    bottom: 115px;
+    bottom: calc(100% + 10px);
     right: 17px;
   }
   .sidebar-quiet {

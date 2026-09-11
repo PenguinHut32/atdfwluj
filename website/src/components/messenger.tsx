@@ -23,7 +23,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { GREETING, type ChatMessage } from "@/lib/chat";
+import {
+  CHAT_MEDIA,
+  GREETING,
+  type ChatMessage,
+  type ChatStyle,
+} from "@/lib/chat";
+import { messageTextParts } from "@/lib/message-text";
 import { parseHistory, serializeHistory, STORAGE_KEY } from "@/lib/history";
 import { Crest } from "./crest";
 import { SoundToggle } from "./experience-provider";
@@ -73,20 +79,49 @@ function readHistory(): ChatMessage[] | null {
   }
 }
 
+const conversationStyles: { value: ChatStyle; label: string }[] = [
+  { value: "natural", label: "Как пойдёт" },
+  { value: "banter", label: "Подколы" },
+  { value: "flirt", label: "Флирт" },
+  { value: "roleplay", label: "Сцена" },
+];
+const stylePrompts: Record<Exclude<ChatStyle, "natural">, string[]> = {
+  banter: [
+    "Всегда такой самоуверенный?",
+    "Спорим, я тебя рассмешу?",
+    "У тебя и на выходных этот серьёзный вид?",
+  ],
+  flirt: [
+    "Ты со всеми так смотришь или мне повезло?",
+    "Составишь мне компанию за чаем?",
+    "Кажется, я здесь не только ради разговора.",
+  ],
+  roleplay: [
+    "*Захожу в храм после тренировки* У тебя найдётся чай?",
+    "*Сажусь рядом на ступенях* Не помешаю?",
+    "*Протягиваю зонт* Прогуляемся под дождём?",
+  ],
+};
+const portraitPrompts = [
+  {
+    label: "После тренировки",
+    prompt: "Покажи фото после тренировки с кубиками пресса, без футболки.",
+  },
+  { label: "В костюме", prompt: "Покажи свой портрет в строгом костюме." },
+  { label: "С улыбкой", prompt: "Покажи свой портрет с лёгкой улыбкой." },
+  { label: "В профиль", prompt: "Покажи свой портрет в профиль." },
+];
+const disclosureKey = (mode: "live" | "demo") => `geto-disclosure-v1-${mode}`;
+
 function highlight(text: string, query: string) {
-  if (!query.trim()) return text;
-  const start = text
-    .toLocaleLowerCase("ru")
-    .indexOf(query.toLocaleLowerCase("ru"));
-  return start < 0 ? (
-    text
-  ) : (
-    <>
-      {text.slice(0, start)}
-      <mark>{text.slice(start, start + query.length)}</mark>
-      {text.slice(start + query.length)}
-    </>
-  );
+  return messageTextParts(text, query).map((part, index) => {
+    const content = part.highlighted ? <mark>{part.text}</mark> : part.text;
+    return part.action ? (
+      <em key={index}>{content}</em>
+    ) : (
+      <span key={index}>{content}</span>
+    );
+  });
 }
 
 export function Messenger() {
@@ -105,6 +140,23 @@ export function Messenger() {
     "loading",
   );
   const [imageGeneration, setImageGeneration] = useState(false);
+  const [style, setStyle] = useState<ChatStyle>("natural");
+  const [acknowledgedMode, setAcknowledgedMode] = useState<
+    "live" | "demo" | null
+  >(null);
+  const acknowledgedModes = useRef(new Set<"live" | "demo">());
+  const needsDisclosure =
+    (mode === "live" || mode === "demo") && acknowledgedMode !== mode;
+  const canSend =
+    ready && !busy && (mode === "live" || mode === "demo") && !needsDisclosure;
+  const about = useRef<HTMLDialogElement>(null);
+  const aboutButton = useRef<HTMLButtonElement>(null);
+  const mediaButton = useRef<HTMLButtonElement>(null);
+  const imageReturnFocus = useRef<HTMLButtonElement | null>(null);
+  const prompts =
+    style === "natural"
+      ? openingPrompts[selectedInvitation || "default"]
+      : stylePrompts[style];
   const [menu, setMenu] = useState<"more" | "media" | "emoji" | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState("");
@@ -125,6 +177,41 @@ export function Messenger() {
   const atBottom = useRef(true);
   const reduced = useReducedMotion();
 
+  function updateMode(nextMode: "live" | "demo") {
+    let acknowledged = acknowledgedModes.current.has(nextMode);
+    try {
+      acknowledged ||=
+        sessionStorage.getItem(disclosureKey(nextMode)) === "accepted";
+    } catch {
+      // In-memory acknowledgement keeps the chat usable when storage is blocked.
+    }
+    setAcknowledgedMode(acknowledged ? nextMode : null);
+    setMode(nextMode);
+  }
+
+  function acknowledge() {
+    if (mode !== "live" && mode !== "demo") return;
+    acknowledgedModes.current.add(mode);
+    setAcknowledgedMode(mode);
+    try {
+      sessionStorage.setItem(disclosureKey(mode), "accepted");
+    } catch {
+      // The current page still remembers consent without browser storage.
+    }
+    about.current?.close();
+    requestAnimationFrame(() => composer.current?.focus());
+  }
+
+  function openAbout() {
+    setMenu(null);
+    aboutButton.current?.focus();
+    about.current?.showModal();
+  }
+
+  useEffect(() => {
+    if (needsDisclosure) about.current?.showModal();
+  }, [needsDisclosure, mode]);
+
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       setMessages(readHistory() || [newGreeting()]);
@@ -137,7 +224,8 @@ export function Messenger() {
         return response.json();
       })
       .then((data) => {
-        setMode(data.mode === "live" ? "live" : "demo");
+        if (data.mode !== "live" && data.mode !== "demo") throw new Error();
+        updateMode(data.mode);
         setImageGeneration(data.imageGeneration === true);
       })
       .catch(() => {
@@ -230,7 +318,14 @@ export function Messenger() {
 
   async function send(content = draft, requestImage = false) {
     const text = content.trim();
-    if (!text || busyLock.current || !ready || text.length > 6000) return;
+    if (
+      !text ||
+      busyLock.current ||
+      !canSend ||
+      text.length > 6000 ||
+      (requestImage && !imageGeneration)
+    )
+      return;
     if (messages.length >= 149) {
       setError(
         "Этот разговор достиг предела контекста. Сохрани его через меню и начни новый диалог.",
@@ -258,6 +353,8 @@ export function Messenger() {
         body: JSON.stringify({
           messages: next.map(({ role, content }) => ({ role, content })),
           invitation: selectedInvitation,
+          style,
+          expectedMode: mode,
           requestImage,
         }),
       });
@@ -271,7 +368,7 @@ export function Messenger() {
       if (typeof data.text !== "string" || !data.text.trim())
         throw new Error("Получен пустой ответ. Попробуй ещё раз.");
       if (controller.signal.aborted) return;
-      setMode(data.mode === "live" ? "live" : "demo");
+      updateMode(data.mode === "live" ? "live" : "demo");
       const safeImage =
         data.image &&
         typeof data.image.src === "string" &&
@@ -362,13 +459,11 @@ export function Messenger() {
       ).length
     : 0;
   const modeLabel =
-    mode === "demo"
-      ? "Демонстрационный режим"
-      : mode === "live"
-        ? "ИИ-персонаж · личный диалог"
-        : mode === "offline"
-          ? "Связь недоступна"
-          : "Соединение…";
+    mode === "offline"
+      ? "Связь недоступна"
+      : mode === "loading"
+        ? "Соединение…"
+        : "Личный диалог";
 
   return (
     <main className="messenger">
@@ -426,7 +521,6 @@ export function Messenger() {
           >
             <span className="avatar">
               <Image src="/images/avatar.webp" alt="" width={50} height={50} />
-              <i />
             </span>
             <span className="contact-body">
               <span className="contact-name">
@@ -709,34 +803,36 @@ export function Messenger() {
             {ready && messages.length === 1 && !busy && (
               <div className="suggested-prompts">
                 <span>С чего начнёшь?</span>
-                {openingPrompts[selectedInvitation || "default"].map(
-                  (prompt) => (
-                    <button key={prompt} onClick={() => void send(prompt)}>
-                      {prompt}
-                      <ArrowUpRight size={13} />
-                    </button>
-                  ),
-                )}
+                {prompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    disabled={!canSend}
+                    onClick={() => void send(prompt)}
+                  >
+                    {prompt}
+                    <ArrowUpRight size={13} />
+                  </button>
+                ))}
               </div>
             )}
           </div>
         </div>
-        {showScrollDown && (
-          <button
-            className="scroll-bottom icon-button"
-            aria-label="К последнему сообщению"
-            onClick={() => {
-              atBottom.current = true;
-              scroll.current?.scrollTo({
-                top: scroll.current.scrollHeight,
-                behavior: reduced ? "instant" : "smooth",
-              });
-            }}
-          >
-            <ChevronDown size={20} />
-          </button>
-        )}
         <div className="composer-area">
+          {showScrollDown && (
+            <button
+              className="scroll-bottom icon-button"
+              aria-label="К последнему сообщению"
+              onClick={() => {
+                atBottom.current = true;
+                scroll.current?.scrollTo({
+                  top: scroll.current.scrollHeight,
+                  behavior: reduced ? "instant" : "smooth",
+                });
+              }}
+            >
+              <ChevronDown size={20} />
+            </button>
+          )}
           {(error || storageWarning) && (
             <div className="chat-error" role="alert">
               <Info size={14} />
@@ -756,6 +852,23 @@ export function Messenger() {
               </button>
             </div>
           )}
+          <div
+            className="conversation-styles"
+            role="group"
+            aria-label="Настроение разговора"
+          >
+            {conversationStyles.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={style === option.value}
+                disabled={!canSend}
+                onClick={() => setStyle(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <form
             className="composer"
             onSubmit={(event) => {
@@ -767,8 +880,11 @@ export function Messenger() {
               <button
                 type="button"
                 className="icon-button"
+                ref={mediaButton}
                 aria-label="Попросить изображение"
-                disabled={busy || !ready}
+                disabled={
+                  busy || !ready || needsDisclosure || mode === "loading"
+                }
                 aria-expanded={menu === "media"}
                 onClick={() => setMenu(menu === "media" ? null : "media")}
               >
@@ -776,35 +892,61 @@ export function Messenger() {
               </button>
               {menu === "media" && (
                 <div className="chat-popover media-popover">
-                  <small>
-                    {imageGeneration ? "СОЗДАТЬ ИЗОБРАЖЕНИЕ" : "ЛИЧНЫЙ АРХИВ"}
-                  </small>
-                  <button
-                    type="button"
-                    onClick={() => void send("Покажи свой портрет.", true)}
-                  >
-                    <ImagePlus size={15} />
-                    {imageGeneration ? "Новый портрет" : "Портрет Гето"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void send("Покажи свой мир, твоё убежище.")}
-                  >
-                    <Crest /> Убежище
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void send("Покажи проклятого духа.")}
-                  >
-                    <span className="media-symbol">◌</span> Проклятая энергия
-                  </button>
+                  <small>НОВЫЙ ПОРТРЕТ</small>
+                  {portraitPrompts.map(({ label, prompt }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={!canSend || !imageGeneration}
+                      aria-describedby={
+                        !imageGeneration ? "portraits-unavailable" : undefined
+                      }
+                      onClick={() => void send(prompt, true)}
+                    >
+                      <ImagePlus size={15} /> {label}
+                    </button>
+                  ))}
+                  {!imageGeneration && (
+                    <>
+                      <p
+                        id="portraits-unavailable"
+                        className="media-unavailable"
+                      >
+                        Новые портреты сейчас недоступны. Можно открыть
+                        изображения из галереи ниже.
+                      </p>
+                      <button type="button" onClick={openAbout}>
+                        <Info size={15} /> О чате
+                      </button>
+                    </>
+                  )}
+                  <small>ГАЛЕРЕЯ</small>
+                  {(
+                    [
+                      ["Портрет Гето", CHAT_MEDIA.portrait],
+                      ["Убежище", CHAT_MEDIA.shrine],
+                      ["Проклятая энергия", CHAT_MEDIA.spirit],
+                    ] as const
+                  ).map(([label, image]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        imageReturnFocus.current = mediaButton.current;
+                        setViewedImage(image);
+                        setMenu(null);
+                      }}
+                    >
+                      <ImagePlus size={15} /> {label}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
             <textarea
               ref={composer}
               value={draft}
-              disabled={busy || !ready}
+              disabled={!canSend}
               maxLength={6000}
               rows={1}
               aria-label="Сообщение Гето"
@@ -832,7 +974,7 @@ export function Messenger() {
                 type="button"
                 className="icon-button"
                 aria-label="Добавить эмодзи"
-                disabled={busy || !ready}
+                disabled={!canSend}
                 aria-expanded={menu === "emoji"}
                 onClick={() => setMenu(menu === "emoji" ? null : "emoji")}
               >
@@ -861,21 +1003,21 @@ export function Messenger() {
               className="send-button"
               type="submit"
               aria-label="Отправить сообщение"
-              disabled={!draft.trim() || busy || !ready}
+              disabled={!draft.trim() || !canSend}
             >
               <Send size={19} />
             </button>
           </form>
           <div className="composer-footnote">
-            <span>
-              {mode === "demo"
-                ? "Деморежим: сценарные ответы · ИИ не подключён"
-                : mode === "live"
-                  ? "ИИ-персонаж · Текст передаётся OpenAI"
-                  : mode === "offline"
-                    ? "Сервис недоступен. Можно попробовать отправить сообщение."
-                    : "Проверяем соединение…"}
-            </span>
+            <button
+              type="button"
+              ref={aboutButton}
+              className="about-chat-button"
+              onClick={openAbout}
+            >
+              <Info size={13} /> О чате
+            </button>
+            {needsDisclosure && <span>Перед разговором открой «О чате».</span>}
             <span className="enter-tip">
               {draft.length > 5500
                 ? `${draft.length} / 6000`
@@ -885,7 +1027,75 @@ export function Messenger() {
         </div>
       </section>
 
-      <dialog ref={profile} className="info-dialog profile-dialog">
+      <dialog
+        ref={about}
+        className="info-dialog about-dialog"
+        aria-labelledby="about-chat-title"
+        onCancel={(event) => {
+          if (needsDisclosure) event.preventDefault();
+        }}
+      >
+        {!needsDisclosure && (
+          <button
+            className="icon-button dialog-close"
+            aria-label="Закрыть информацию о чате"
+            onClick={() => about.current?.close()}
+          >
+            <X size={20} />
+          </button>
+        )}
+        <span className="eyebrow">ПЕРЕД РАЗГОВОРОМ</span>
+        <h2 id="about-chat-title" tabIndex={-1} autoFocus>
+          О чате
+        </h2>
+        <p>
+          Это фанатская художественная интерпретация взрослого Сугуру Гето, а не
+          реальный человек. Подколы, лёгкий флирт и сцены остаются вымыслом.
+        </p>
+        <p className="about-mode" role="status">
+          {mode === "demo"
+            ? "Сейчас включён демонстрационный режим: ответы заранее написаны и выбираются по сценарию. ИИ не подключён; текст отправляется серверу проекта, но не передаётся OpenAI."
+            : mode === "live"
+              ? "Сейчас включён ИИ-диалог: ответы создаёт модель OpenAI. При отправке текст текущей переписки передаётся нашему серверу и OpenAI для ответа; запросы новых изображений также обрабатывает OpenAI."
+              : mode === "offline"
+                ? "Не удалось проверить доступность чата. Отправка отключена. Обнови страницу, чтобы проверить соединение снова."
+                : "Проверяем доступность чата. До завершения проверки отправка отключена."}
+        </p>
+        <p>
+          Не отправляй чувствительные или личные данные. История текста
+          сохраняется в этом браузере, если его настройки позволяют; её можно
+          скачать или удалить через меню диалога.
+        </p>
+        <p>
+          {imageGeneration
+            ? "Новые портреты создаются по запросу и могут отличаться от канона. Созданные иллюстрации доступны до закрытия страницы: сохраняй их отдельно через просмотр изображения."
+            : "Создание новых портретов сейчас недоступно. Галерея содержит готовые изображения, а не новые фото по твоему запросу."}
+        </p>
+        <p>
+          Описание режима и обработки данных всегда доступно здесь, по кнопке «О
+          чате».
+        </p>
+        {needsDisclosure ? (
+          <div className="about-actions">
+            <button className="primary-button" onClick={acknowledge}>
+              Начать разговор
+            </button>
+            <Link href="/">Вернуться за порог</Link>
+          </div>
+        ) : (
+          <button
+            className="primary-button"
+            onClick={() => about.current?.close()}
+          >
+            Вернуться к разговору <ArrowLeft size={16} />
+          </button>
+        )}
+      </dialog>
+      <dialog
+        ref={profile}
+        className="info-dialog profile-dialog"
+        aria-labelledby="geto-profile-title"
+      >
         <button
           className="icon-button dialog-close"
           aria-label="Закрыть профиль"
@@ -902,27 +1112,25 @@ export function Messenger() {
           />
         </span>
         <span className="eyebrow">呪霊操術 · ОСОБЫЙ РАНГ</span>
-        <h2>Сугуру Гето</h2>
+        <h2 id="geto-profile-title">Сугуру Гето</h2>
         <blockquote>
           «Не бойся тишины.
           <br />В ней слышно самое важное.»
         </blockquote>
         <div className="profile-details">
           <span>
-            СОБЕСЕДНИК<strong>ИИ-персонаж · Фан-проект</strong>
+            ВОЗРАСТ<strong>27 лет</strong>
           </span>
           <span>
-            ПРОСТРАНСТВО<strong>Только один диалог. Никакого шума.</strong>
+            ПУТЬ<strong>Бывший маг. Свою сторону я уже выбрал.</strong>
           </span>
           <span>
-            ПАМЯТЬ<strong>История хранится в этом браузере.</strong>
+            ТЕХНИКА<strong>Манипуляция проклятыми духами.</strong>
           </span>
         </div>
         <p>
-          При подключённом ИИ текст переписки обрабатывает OpenAI. Не отправляй
-          чувствительные данные. Сгенерированные изображения доступны до
-          закрытия страницы: сохрани их отдельно через просмотр изображения. Это
-          художественная интерпретация персонажа, не реальный человек.
+          Чай, тишина и собеседник, который не боится возразить. Для начала
+          вполне достаточно. Только не жди, что я во всём соглашусь.
         </p>
         <button
           className="primary-button"
@@ -955,7 +1163,11 @@ export function Messenger() {
       <dialog
         ref={imageDialog}
         className="image-lightbox"
-        onClose={() => setViewedImage(null)}
+        onClose={() => {
+          setViewedImage(null);
+          imageReturnFocus.current?.focus();
+          imageReturnFocus.current = null;
+        }}
         onClick={(event) => {
           if (event.target === event.currentTarget)
             imageDialog.current?.close();
@@ -977,7 +1189,15 @@ export function Messenger() {
               height={1000}
               unoptimized
             />
-            <p>{viewedImage.alt}</p>
+            <p>
+              {viewedImage.alt}
+              <br />
+              <span className="image-origin">
+                {viewedImage.src.startsWith("data:")
+                  ? "Созданная иллюстрация"
+                  : "Из галереи"}
+              </span>
+            </p>
             <a
               className="image-download"
               href={viewedImage.src}

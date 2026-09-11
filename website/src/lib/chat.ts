@@ -1,3 +1,6 @@
+export const CHAT_STYLES = ["natural", "banter", "flirt", "roleplay"] as const;
+export type ChatStyle = (typeof CHAT_STYLES)[number];
+
 export type ChatImage = { src: string; alt: string };
 
 export type ChatMessage = {
