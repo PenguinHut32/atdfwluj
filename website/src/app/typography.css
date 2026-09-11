@@ -1,0 +1,160 @@
+.scene-kanji,
+.door-kanji,
+.philosophy-mark > span,
+.sidebar-quiet > span,
+.chat-watermark > span,
+.hero-margin-label > span,
+.chapter-index,
+.contact-name > span,
+.orbit-star,
+.character-mark {
+  font-family: var(--font-jp), serif;
+}
+.profile-dialog > .eyebrow {
+  font-family: var(--font-sans), var(--font-jp), sans-serif;
+}
+.site-header nav a,
+.header-chat {
+  font-size: 12px;
+}
+.hero-description {
+  font-size: 13px;
+}
+.hero-signature small {
+  font-size: 9px;
+}
+.section-heading > p {
+  font-size: 11px;
+}
+.door-description {
+  font-size: 12px;
+}
+.door-detail {
+  font-size: 8px;
+  color: var(--gold);
+}
+.door-footer {
+  font-size: 11px;
+}
+.invitations-footnote {
+  font-size: 9px;
+}
+.philosophy-bottom {
+  font-size: 10px;
+}
+.message-bubble > p {
+  font-size: 14px;
+}
+.chat-person strong,
+.contact-name {
+  font-size: 13px;
+}
+.chat-person small,
+.contact-preview {
+  font-size: 10px;
+}
+.suggested-prompts > button {
+  font-size: 12px;
+}
+.composer textarea {
+  font-size: 14px;
+}
+.composer-footnote {
+  color: var(--muted);
+  font-size: 8px;
+}
+.conversation-notice {
+  color: var(--muted);
+  font-size: 9px;
+}
+@media (max-width: 1100px) {
+  .door-description {
+    font-size: 11px;
+  }
+  .door-footer {
+    font-size: 10px;
+  }
+  .door-detail {
+    font-size: 7px;
+  }
+}
+@media (max-width: 800px) {
+  .site-header nav a,
+  .header-chat {
+    font-size: 10px;
+  }
+  .hero-description {
+    font-size: 11px;
+  }
+  .door-description {
+    font-size: 10px;
+  }
+  .door-footer {
+    font-size: 9px;
+  }
+  .section-heading > p {
+    font-size: 9px;
+  }
+}
+.image-download {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  padding: 14px;
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .chat-sidebar {
+    visibility: hidden;
+  }
+  .chat-sidebar.sidebar-open {
+    visibility: visible;
+  }
+}
+@media (max-width: 600px) {
+  .hero h1 {
+    font-size: 54px;
+  }
+  .hero-signature {
+    display: none;
+  }
+  .hero-scene {
+    top: 375px;
+    right: -5px;
+  }
+  .hero {
+    min-height: 870px;
+  }
+  .composer textarea {
+    font-size: 16px;
+  }
+  .suggested-prompts > button {
+    font-size: 11px;
+  }
+  .door-description {
+    font-size: 12px;
+  }
+  .door-footer {
+    font-size: 11px;
+  }
+  .door-detail {
+    font-size: 8px;
+  }
+  .section-heading > p {
+    font-size: 11px;
+  }
+  .invitations-footnote {
+    font-size: 8px;
+  }
+  .hero-description {
+    font-size: 12px;
+  }
+  .philosophy-bottom {
+    font-size: 9px;
+  }
+  .composer-footnote {
+    font-size: 7px;
+  }
+}
